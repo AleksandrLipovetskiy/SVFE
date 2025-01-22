@@ -1,79 +1,89 @@
 import subprocess
 import logging
 from datetime import datetime
+import sys
 
-# Определяем цветовые коды 
+# Define color codes 
 GREEN = '\033[0;32m'
 RED = '\033[0;31m'
-NC = '\033[0m' # Без цвета 
+NC = '\033[0m' # No color 
 
-# Файл для логирования 
+# Log file 
 LOG_FILE = "./check_log.log"
 
-# Файл с IP-адресами 
+# File with IP addresses 
 CONFIG_FILE = "./ip_addres.conf"
 
-# Настройка логирования
+# Logging configuration
 logging.basicConfig(filename=LOG_FILE, level=logging.INFO, format='%(message)s')
 
-# Проверка существования файла конфигурации
+# Check if configuration file exists
 import os
 if not os.path.isfile(CONFIG_FILE):
-    message = f"Файл конфигурации {CONFIG_FILE} не найден."
+    message = f"Configuration file {CONFIG_FILE} not found."
     print(message)
     logging.info(message)
     exit(1)
 
-# Функция для проверки доступности IP 
+# Function to check IP availability 
 def check_ip(ip, name):
     try:
         subprocess.check_output(["ping", "-c", "3", ip], stderr=subprocess.STDOUT)
-        message = f"{GREEN}{datetime.now()}: {name} по IP-{ip} OK - доступен{NC}"
+        message = f"{GREEN}{datetime.now()}: {name} on IP-{ip} OK - available{NC}"
         print(message)
         logging.info(message)
         return True
     except subprocess.CalledProcessError:
-        message = f"{RED}{datetime.now()}: {name} по IP-{ip} недоступен{NC}"
+        message = f"{RED}{datetime.now()}: {name} on IP-{ip} is unreachable{NC}"
         print(message)
         logging.info(message)
         return False
 
-# Функция для проверки доступности порта с таймаутом 
+# Function to check port availability with timeout 
 def check_port(ip_port):
     ip, port = ip_port.split(':')
     try:
-        # Проверка порта с помощью /dev/tcp с таймаутом в 5 секунд 
+        # Check the port using /dev/tcp with a 5-second timeout 
         subprocess.check_output(["timeout", "5", "bash", "-c", f"echo > /dev/tcp/{ip}/{port}"], stderr=subprocess.DEVNULL)
-        message = f"{GREEN}{datetime.now()}: Порт {port} на {ip} доступен{NC}"
+        message = f"{GREEN}{datetime.now()}: Port {port} on {ip} is available{NC}"
         print(message)
         logging.info(message)
     except subprocess.CalledProcessError:
-        message = f"{RED}{datetime.now()}: Порт {port} на {ip} недоступен или таймаут{NC}"
+        message = f"{RED}{datetime.now()}: Port {port} on {ip} is unavailable or timeout{NC}"
         print(message)
         logging.info(message)
 
-# Загружаем ассоциативный массив из файла конфигурации 
+# Load associative array from configuration file 
 IP_ADDRESSES = {}
 
 with open(CONFIG_FILE, 'r') as config_file:
     for line in config_file:
-        if '=' in line:  # Пропускаем строки без знака равенства
+        if '=' in line:  # Skip lines without equals sign
             key, value = line.strip().split('=', 1)
             IP_ADDRESSES[key] = value
 
-# Проверка IP и портов для каждого IP 
-for name, ip_port in IP_ADDRESSES.items():
-    print(f"Проверка {name} ({ip_port})")
+# Function to handle interruption
+def handle_interrupt():
+    print("\nScript execution interrupted...")
+    logging.info("Script execution interrupted.")
+    sys.exit(0)
 
-    # Проверяем доступность IP 
-    ip, port = ip_port.split(':', 1)  # Разделяем IP и порт для проверки 
-    check_ip(ip, name)
+# Check IP and ports for each IP 
+try:
+    for name, ip_port in IP_ADDRESSES.items():
+        print(f"Checking {name} ({ip_port})")
 
-    # Если порт равен 'ANY', пропускаем проверку порта 
-    if port == 'ANY':
-        message = f"Порт для {ip} установлен как 'ANY'. Пропускаем проверку порта."
-        print(message)
-        logging.info(message)
-    else:
-        # Проверяем доступность порта 
-        check_port(ip_port)
+        # Check IP availability 
+        ip, port = ip_port.split(':', 1)  # Split IP and port for checking 
+        check_ip(ip, name)
+
+        # If port is 'ANY', skip port check 
+        if port == 'ANY':
+            message = f"Port for {ip} set as 'ANY'. Skipping port check."
+            print(message)
+            logging.info(message)
+        else:
+            # Check port availability 
+            check_port(ip_port)
+except KeyboardInterrupt:
+    handle_interrupt()
