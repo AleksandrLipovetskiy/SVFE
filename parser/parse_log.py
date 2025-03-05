@@ -33,11 +33,19 @@ def parse_log_file(file_path):
         
         with open(output_file, 'w', encoding='utf-8') as out_file:
             for message in messages:
-                reg_utrnno_match = re.search(r'Reg_utrnno\s*(\d+)', message)
-                utrnno_match = re.search(r'utrnno:\s*(\d+)', message)
+                # Ищем New utrnno
+                new_utrnno_match = re.search(r'New utrnno\s*(\d+)', message)
                 
-                num1 = reg_utrnno_match.group(1) if reg_utrnno_match else 'None'
-                num2 = utrnno_match.group(1) if utrnno_match else 'None'
+                if new_utrnno_match:
+                    num1 = new_utrnno_match.group(1)
+                    # Получаем позицию конца New utrnno
+                    new_utrnno_end = new_utrnno_match.end()
+                    # Ищем Reg_utrnno только после New utrnno
+                    reg_utrnno_match = re.search(r'Reg_utrnno\s*(\d+)', message[new_utrnno_end:])
+                    num2 = reg_utrnno_match.group(1) if reg_utrnno_match else 'None'
+                else:
+                    num1 = 'None'
+                    num2 = 'None'
                 
                 out_file.write(f"'{num1}', '{num2}'\n")
                 
