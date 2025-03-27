@@ -4,9 +4,11 @@ import os
 import sys
 import glob
 import gzip
+import re
 from datetime import datetime
 import chardet
 import multiprocessing
+import argparse
 from functools import partial
 
 def detect_encoding(raw_data):
@@ -14,7 +16,7 @@ def detect_encoding(raw_data):
     result = chardet.detect(raw_data[:10000])  # Анализируем первые 10000 байт
     return result['encoding'] if result['confidence'] > 0.7 else 'latin-1'  # Возвращаем latin-1 как запасной вариант
 
-def process_file(file_path, search_values):
+def process_file(file_path, search_values, use_regex=False):
     """Обрабатывает один файл с поиском заданных значений"""
     try:
         # Читаем образец для определения кодировки
@@ -26,7 +28,9 @@ def process_file(file_path, search_values):
         for encoding in {detected_encoding, 'utf-8', 'cp1251', 'latin-1', 'koi8-r'}:
             try:
                 with gzip.open(file_path, 'rt', encoding=encoding) as f:
-                    # Возвращаем строки, содержащие искомые значения
+                    # Используем regex или точное вхождение в зависимости от флага
+                    if use_regex:
+                        return [line.strip() for line in f if any(re.search(value, line) for value in search_values)]
                     return [line.strip() for line in f if any(value in line for value in search_values)]
             except UnicodeDecodeError:
                 continue  # Пробуем следующую кодировку при ошибке декодирования
@@ -39,7 +43,7 @@ def process_file(file_path, search_values):
         print(f"Ошибка при обработке архива {file_path}: {e}")
         return []
 
-def search_and_move_strings(directory_pattern, search_values):
+def search_and_move_strings(directory_pattern, search_values, unique=False, use_regex=False):
     """Ищет строки в файлах и записывает результаты в новый файл"""
     # Формируем имя выходного файла с временной меткой
     current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -53,11 +57,14 @@ def search_and_move_strings(directory_pattern, search_values):
 
     # Создаем пул процессов для параллельной обработки
     with multiprocessing.Pool(processes=8) as pool:
-        process_partial = partial(process_file, search_values=search_values)
+        process_partial = partial(process_file, search_values=search_values, use_regex=use_regex)
         found_lines = pool.map(process_partial, files_to_search)
     
     # Объединяем результаты из всех файлов
     found_lines = [line for sublist in found_lines for line in sublist if sublist]
+    # Удаляем дубликаты, если указана опция unique
+    if unique:
+        found_lines = list(dict.fromkeys(found_lines))  # Сохраняем порядок
     
     # Записываем найденные строки в файл
     if found_lines:
@@ -70,20 +77,20 @@ def search_and_move_strings(directory_pattern, search_values):
     else:
         print("Совпадений не найдено")
 
-def get_search_values(arg):
-    """Получает массив значений из файла или строки аргументов"""
-    if os.path.isfile(arg):
-        # Читаем значения из файла с попыткой разных кодировок
+def get_search_values(args):
+    """Получает массив значений из аргументов или файла"""
+    if len(args) == 1 and os.path.isfile(args[0]):
+        # Если передан один аргумент и это файл, читаем значения из него
         for encoding in {'utf-8', 'cp1251', 'latin-1', 'koi8-r'}:
             try:
-                with open(arg, 'r', encoding=encoding) as f:
+                with open(args[0], 'r', encoding=encoding) as f:
                     return [line.strip() for line in f if line.strip()]
             except (UnicodeDecodeError, Exception):
                 continue
-        print(f"Не удалось прочитать файл {arg}")
+        print(f"Не удалось прочитать файл {args[0]}")
         sys.exit(1)
-    # Разделяем строку значений по запятой
-    return [value.strip() for value in arg.split(',') if value.strip()]
+    # Иначе считаем все аргументы значениями для поиска
+    return [value.strip() for value in args if value.strip()]
 
 def main():
     """Основная функция обработки аргументов и запуска поиска"""
@@ -91,12 +98,16 @@ def main():
     parser.add_argument("-p", "--pattern", required=True, help="Маска для файлов (например, '/path/*.gz')")
     parser.add_argument("-f", "--file", help="Путь к файлу со значениями для поиска")
     parser.add_argument("-v", "--values", nargs="*", default=[], help="Значения для поиска (через пробел)")
+    parser.add_argument("--unique", action="store_true", help="Удалять дублирующиеся строки в результате")
+    parser.add_argument("--regex", action="store_true", help="Использовать регулярные выражения для поиска")
     
     args = parser.parse_args()
 
+    # Проверяем, что указан либо файл, либо значения
     if not args.file and not args.values:
         parser.error("Необходимо указать либо файл (-f), либо значения (-v)")
 
+    # Получаем значения для поиска
     if args.file:
         search_values = get_search_values([args.file])
     else:
@@ -106,7 +117,7 @@ def main():
         print("Не указаны значения для поиска")
         sys.exit(1)
         
-    search_and_move_strings(args.pattern, search_values)
+    search_and_move_strings(args.pattern, search_values, args.unique, args.regex)
 
 if __name__ == "__main__":
     main()
