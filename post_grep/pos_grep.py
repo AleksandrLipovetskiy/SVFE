@@ -87,22 +87,26 @@ def get_search_values(arg):
 
 def main():
     """Основная функция обработки аргументов и запуска поиска"""
-    if len(sys.argv) < 2:
-        print("Использование: python script.py <путь_с_маской> [значения или файл]")
-        print("Пример: python script.py /home/user/OPS_2025*.gz /home/user/values.txt")
-        print("Пример: python script.py /home/user/OPS_2025*.gz 452179279285,452166059532")
-        sys.exit(1)
-
-    directory_pattern = sys.argv[1]
-    # Объединяем все аргументы после первого в одну строку
-    search_arg = ' '.join(sys.argv[2:]) if len(sys.argv) > 2 else ""
-    search_values = get_search_values(search_arg) if search_arg else []
+    parser = argparse.ArgumentParser(description="Поиск строк в архивах по заданным значениям")
+    parser.add_argument("-p", "--pattern", required=True, help="Маска для файлов (например, '/path/*.gz')")
+    parser.add_argument("-f", "--file", help="Путь к файлу со значениями для поиска")
+    parser.add_argument("-v", "--values", nargs="*", default=[], help="Значения для поиска (через пробел)")
     
+    args = parser.parse_args()
+
+    if not args.file and not args.values:
+        parser.error("Необходимо указать либо файл (-f), либо значения (-v)")
+
+    if args.file:
+        search_values = get_search_values([args.file])
+    else:
+        search_values = get_search_values(args.values)
+
     if not search_values:
         print("Не указаны значения для поиска")
         sys.exit(1)
         
-    search_and_move_strings(directory_pattern, search_values)
+    search_and_move_strings(args.pattern, search_values)
 
 if __name__ == "__main__":
     main()
